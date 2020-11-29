@@ -27,13 +27,10 @@
 
 #include "arduino_secrets.h"
 
-#include "DHT.h"
-#define DHTPIN 2     // Digital pin connected to the DHT sensor
-#define DHTTYPE DHT11   // DHT 11
-DHT dht(DHTPIN, DHTTYPE);
-
 // 충격 센서 PIN 설정
 #define SHOCK_PIN 2
+
+#define OPEN_PIN A0
 
 #define LED_1_PIN 5
 
@@ -41,6 +38,8 @@ DHT dht(DHTPIN, DHTTYPE);
 #include "Led.h"
 
 #include "Shock.h"
+
+#include "Open.h"
 
 /////// Enter your sensitive data in arduino_secrets.h
 const char ssid[]        = SECRET_SSID;
@@ -56,12 +55,14 @@ unsigned long lastMillis = 0;
 
 Led led1(LED_1_PIN);
 Shock shock1(SHOCK_PIN);
+Open open1(OPEN_PIN);
+
+int shockVal;
+int openReading;
 
 void setup() {
   Serial.begin(115200);
   while (!Serial);
-
-  dht.begin();
 
   if (!ECCX08.begin()) {
     Serial.println("No ECCX08 present!");
@@ -154,9 +155,6 @@ void connectMQTT() {
 
 // 아두이노의 상태 정보를 얻어온다.
 void getDeviceStatus(char* payload) {
-  // Read temperature as Celsius (the default)
-  float t = dht.readTemperature();
-
   // Read led status
   const char* led = (led1.getState() == LED_ON)? "ON" : "OFF";
   // 충격 센서 실행 여부
@@ -164,10 +162,10 @@ void getDeviceStatus(char* payload) {
 
   // 앱에서 충격 감지 센서를 실행시킬 때만 충격을 감지
   if(shockRun == "RUN"){
-    int val = digitalRead(SHOCK_PIN);
+    shockVal = digitalRead(SHOCK_PIN);
 
     // 충격 감지 시
-    if(val == HIGH){
+    if(shockVal == HIGH){
       led1.on();
       shock1.on();
     } else {
@@ -175,13 +173,25 @@ void getDeviceStatus(char* payload) {
     }
   }
 
+  openReading = analogRead(OPEN_PIN);
+
+  int openVal = map(openReading, 0, 1024, 0, 255);   // 읽어온 데이터를 0~255범위로 변경하여 줍니다.
+
+  // 금고를 열 때
+  if(openVal > 100) {
+    open1.openSafe();
+  } else {
+    open1.closeSafe();
+  }
+
+
+  const char* openSafe = (open1.getState() == OPEN)? "OPEN" : "CLOSE";
+
   // 충격 감지시 ON
   const char* shock = (shock1.getState() == SHOCK_ON)? "ON" : "OFF";
   
   // make payload for the device update topic ($aws/things/MyMKRWiFi1010/shadow/update)
-  sprintf(payload,"{\"state\":{\"reported\":{\"temperature\":\"%0.2f\",\"LED\":\"%s\"}}}",t,led);
-
-  sprintf(payload,"{\"state\":{\"reported\":{\"SHOCK_RUN\":\"%s\",\"LED\":\"%s\", \"SHOCK\":\"%s\"}}}",shockRun,led,shock);
+  sprintf(payload,"{\"state\":{\"reported\":{\"SHOCK_RUN\":\"%s\",\"LED\":\"%s\", \"SHOCK\":\"%s\",\"SAFE\":\"%s\"}}}",shockRun,led,shock,openSafe);
 }
 
 // MQTT Client에 메시지를 보낸다.
@@ -214,6 +224,7 @@ void onMessageReceived(int messageSize) {
   Serial.println(buffer);
   Serial.println();
 
+
   // JSon 형식의 문자열인 buffer를 파싱하여 필요한 값을 얻어옴.
   // 디바이스가 구독한 토픽이 $aws/things/MyMKRWiFi1010/shadow/update/delta 이므로,
   // JSon 문자열 형식은 다음과 같다.
@@ -222,22 +233,29 @@ void onMessageReceived(int messageSize) {
   //    "timestamp":1572784097,
   //    "state":{
   //        "LED":"ON"
+  //        "SHOCK_RUN:"RUN"
   //    },
   //    "metadata":{
   //        "LED":{
+  //          "timestamp":15727840
+  //         },
+  //        "SHOCK_RUN":{
   //          "timestamp":15727840
   //         }
   //    }
   // }
   //
+    
   DynamicJsonDocument doc(1024);
   deserializeJson(doc, buffer);
   JsonObject root = doc.as<JsonObject>();
   JsonObject state = root["state"];
   const char* led = state["LED"];
   const char* shockRun = state["SHOCK_RUN"];
+  const char* shock = state["SHOCK"];
   Serial.println(led);
   Serial.println(shockRun);
+  Serial.println(shock);
    
   char payload[512];
   
@@ -252,35 +270,26 @@ void onMessageReceived(int messageSize) {
     sendMessage(payload);
   }
 
-  // JSon 형식의 문자열인 buffer를 파싱하여 필요한 값을 얻어옴.
-  // 디바이스가 구독한 토픽이 $aws/things/MyMKRWiFi1010/shadow/update/delta 이므로,
-  // JSon 문자열 형식은 다음과 같다.
-  // {
-  //    "version":391,
-  //    "timestamp":1572784097,
-  //    "state":{
-  //        "LED":"ON"
-  //        "SHOCK_RUN:"YES"
-  //    },
-  //    "metadata":{
-  //        "LED":{
-  //          "timestamp":15727840
-  //         }
-  //        "SHOCK_RUN":{
-  //          "timestamp":15727840
-  //         }
-  //    }
-  // }
-  //
-    
    if (strcmp(shockRun,"RUN")==0) {
-    shock1.run();
+    shock1.runShock();
     sprintf(payload,"{\"state\":{\"reported\":{\"SHOCK_RUN\":\"%s\"}}}","RUN");
     sendMessage(payload);
     
   } else if (strcmp(shockRun,"STOP")==0) {
-    shock1.stop();
+    shock1.stopShock();
     sprintf(payload,"{\"state\":{\"reported\":{\"SHOCK_RUN\":\"%s\"}}}","STOP");
+    sendMessage(payload);
+  }
+
+  // 충격 센서 테스트
+  if (strcmp(shock,"ON")==0) {
+    shock1.on();
+    sprintf(payload,"{\"state\":{\"reported\":{\"SHOCK\":\"%s\"}}}","ON");
+    sendMessage(payload);
+    
+  } else if (strcmp(shock,"OFF")==0) {
+    shock1.off();
+    sprintf(payload,"{\"state\":{\"reported\":{\"SHOCK\":\"%s\"}}}","OFF");
     sendMessage(payload);
   }
  

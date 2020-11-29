@@ -25,11 +25,11 @@ void Shock::off() {
   state = SHOCK_OFF;
 }
 
-void Shock::run() {
+void Shock::runShock() {
   runState = SHOCK_RUN;
 }
 
-void Shock::stop() {
+void Shock::stopShock() {
   runState = SHOCK_STOP;
 }
 

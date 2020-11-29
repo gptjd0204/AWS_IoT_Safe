@@ -16,8 +16,8 @@ class Shock {
     void init();
     void on();
     void off();
-	void run();
-	void stop();
+	void runShock();
+	void stopShock();
     byte getState();
 	byte getRunState();
 };
