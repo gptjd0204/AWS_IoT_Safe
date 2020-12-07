@@ -30,6 +30,7 @@
 // 충격 센서 PIN 설정
 #define SHOCK_PIN 2
 
+// 조도 센서
 #define OPEN_PIN A0
 
 #define LED_1_PIN 5
@@ -104,7 +105,7 @@ void loop() {
 
   // publish a message roughly every 5 seconds.
   // 5초마다 아두이노(디바이스)의 상태 정보를 얻어와 AWS IoT에 보낸다.
-  if (millis() - lastMillis > 5000) {
+  if (millis() - lastMillis > 1000) {
     lastMillis = millis();
     char payload[512];
     getDeviceStatus(payload); // 아두이노(디바이스)의 상태 정보를 얻어온다.
@@ -150,7 +151,7 @@ void connectMQTT() {
   Serial.println();
 
   // subscribe to a topic
-  mqttClient.subscribe("$aws/things/MyMKRWiFi1010/shadow/update/delta");
+  mqttClient.subscribe("$aws/things/SmartSAFE/shadow/update/delta");
 }
 
 // 아두이노의 상태 정보를 얻어온다.
@@ -159,44 +160,44 @@ void getDeviceStatus(char* payload) {
   const char* led = (led1.getState() == LED_ON)? "ON" : "OFF";
   // 충격 센서 실행 여부
   const char* shockRun = (shock1.getRunState() == SHOCK_RUN)? "RUN" : "STOP";
+  
+  shockVal = digitalRead(SHOCK_PIN);
+  Serial.println(shockVal);
 
   // 앱에서 충격 감지 센서를 실행시킬 때만 충격을 감지
   if(shockRun == "RUN"){
-    shockVal = digitalRead(SHOCK_PIN);
-
     // 충격 감지 시
     if(shockVal == HIGH){
       led1.on();
       shock1.on();
     } else {
       shock1.off();
+      led1.off();
     }
   }
 
   openReading = analogRead(OPEN_PIN);
 
-  int openVal = map(openReading, 0, 1024, 0, 255);   // 읽어온 데이터를 0~255범위로 변경하여 줍니다.
-
+  //int openVal = map(openReading, 0, 1024, 0, 255);   // 읽어온 데이터를 0~255범위로 변경하여 줍니다.
+  Serial.println(openReading);
   // 금고를 열 때
-  if(openVal > 100) {
+  if(openReading < 500) {
     open1.openSafe();
   } else {
     open1.closeSafe();
   }
-
-
   const char* openSafe = (open1.getState() == OPEN)? "OPEN" : "CLOSE";
 
   // 충격 감지시 ON
   const char* shock = (shock1.getState() == SHOCK_ON)? "ON" : "OFF";
   
-  // make payload for the device update topic ($aws/things/MyMKRWiFi1010/shadow/update)
+  // make payload for the device update topic ($aws/things/SmartSAFE/shadow/update)
   sprintf(payload,"{\"state\":{\"reported\":{\"SHOCK_RUN\":\"%s\",\"LED\":\"%s\", \"SHOCK\":\"%s\",\"SAFE\":\"%s\"}}}",shockRun,led,shock,openSafe);
 }
 
 // MQTT Client에 메시지를 보낸다.
 void sendMessage(char* payload) {
-  char TOPIC_NAME[]= "$aws/things/MyMKRWiFi1010/shadow/update";
+  char TOPIC_NAME[]= "$aws/things/SmartSAFE/shadow/update";
   
   Serial.print("Publishing send message:");
   Serial.println(payload);
@@ -250,25 +251,17 @@ void onMessageReceived(int messageSize) {
   deserializeJson(doc, buffer);
   JsonObject root = doc.as<JsonObject>();
   JsonObject state = root["state"];
-  const char* led = state["LED"];
+  //const char* led = state["LED"];
   const char* shockRun = state["SHOCK_RUN"];
-  const char* shock = state["SHOCK"];
-  Serial.println(led);
+  //const char* shock = state["SHOCK"];
+  //const char* openSafe = state["SAFE"];
+  //Serial.println(led);
   Serial.println(shockRun);
-  Serial.println(shock);
+  //Serial.println(shock);
+  //Serial.println(openSafe);
    
   char payload[512];
-  
-  if (strcmp(led,"ON")==0) {
-    led1.on();
-    sprintf(payload,"{\"state\":{\"reported\":{\"LED\":\"%s\"}}}","ON");
-    sendMessage(payload);
-    
-  } else if (strcmp(led,"OFF")==0) {
-    led1.off();
-    sprintf(payload,"{\"state\":{\"reported\":{\"LED\":\"%s\"}}}","OFF");
-    sendMessage(payload);
-  }
+ 
 
    if (strcmp(shockRun,"RUN")==0) {
     shock1.runShock();
@@ -280,6 +273,7 @@ void onMessageReceived(int messageSize) {
     sprintf(payload,"{\"state\":{\"reported\":{\"SHOCK_RUN\":\"%s\"}}}","STOP");
     sendMessage(payload);
   }
+  /*
 
   // 충격 센서 테스트
   if (strcmp(shock,"ON")==0) {
@@ -292,5 +286,16 @@ void onMessageReceived(int messageSize) {
     sprintf(payload,"{\"state\":{\"reported\":{\"SHOCK\":\"%s\"}}}","OFF");
     sendMessage(payload);
   }
- 
+  */
+     /*
+  if (strcmp(openSafe,"OPEN")==0) {
+    led1.on();
+    sprintf(payload,"{\"state\":{\"reported\":{\"LED\":\"%s\"}}}","ON");
+    sendMessage(payload);
+    
+  } else if (strcmp(openSafe,"CLOSE")==0) {
+    led1.off();
+    sprintf(payload,"{\"state\":{\"reported\":{\"LED\":\"%s\"}}}","OFF");
+    sendMessage(payload);
+  }*/
 }

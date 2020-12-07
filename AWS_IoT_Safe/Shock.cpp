@@ -1,18 +1,13 @@
 #include "Shock.h"
 
 Shock::Shock(int pin) {
-  // Use 'this->' to make the difference between the
-  // 'pin' attribute of the class and the 
-  // local variable 'pin' created from the parameter.
   this->pin = pin;
   init();
 }
 void Shock::init() {
-  pinMode(pin, OUTPUT);
-  // Always try to avoid duplicate code.
-  // Instead of writing digitalWrite(pin, LOW) here,
-  // call the function off() which already does that
+  pinMode(pin, INPUT);
   off();
+  stopShock();
   state = SHOCK_OFF;
   runState = SHOCK_STOP;
 }
@@ -29,7 +24,7 @@ void Shock::runShock() {
   runState = SHOCK_RUN;
 }
 
-void Shock::stopShock() {
+void Shock:: stopShock(){
   runState = SHOCK_STOP;
 }
 
