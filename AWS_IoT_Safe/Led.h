@@ -13,5 +13,7 @@ class Led {
     void init();
     void on();
     void off();
+    void runOn();
+    void runOff();
     byte getState();
 };

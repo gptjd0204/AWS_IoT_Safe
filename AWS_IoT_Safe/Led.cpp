@@ -13,6 +13,7 @@ void Led::init() {
   // Instead of writing digitalWrite(pin, LOW) here,
   // call the function off() which already does that
   off();
+  runOff();
   state = LED_OFF;
 }
 void Led::on() {
@@ -24,10 +25,21 @@ void Led::on() {
     delay(1000);
   }
 }
+
+
 void Led::off() {
   digitalWrite(pin, LOW);
   state = LED_OFF;
 }
+
+void Led::runOn() {
+    digitalWrite(pin, HIGH);
+}
+
+void Led::runOff() {
+  digitalWrite(pin, LOW);
+}
+
 
 byte Led::getState() {
   return state;

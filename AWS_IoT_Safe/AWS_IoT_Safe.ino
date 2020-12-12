@@ -30,16 +30,16 @@
 // 충격 센서 PIN 설정
 #define SHOCK_PIN 2
 
-// 조도 센서
+// 조도 센서 PIN 설정
 #define OPEN_PIN A0
 
+// LED PIN 설정
 #define LED_1_PIN 5
+#define LED_2_PIN 4
 
 #include <ArduinoJson.h>
 #include "Led.h"
-
 #include "Shock.h"
-
 #include "Open.h"
 
 /////// Enter your sensitive data in arduino_secrets.h
@@ -55,6 +55,7 @@ MqttClient    mqttClient(sslClient);
 unsigned long lastMillis = 0;
 
 Led led1(LED_1_PIN);
+Led led2(LED_2_PIN);
 Shock shock1(SHOCK_PIN);
 Open open1(OPEN_PIN);
 
@@ -104,7 +105,7 @@ void loop() {
   mqttClient.poll();
 
   // publish a message roughly every 5 seconds.
-  // 5초마다 아두이노(디바이스)의 상태 정보를 얻어와 AWS IoT에 보낸다.
+  // 1초마다 아두이노(디바이스)의 상태 정보를 얻어와 AWS IoT에 보낸다.
   if (millis() - lastMillis > 1000) {
     lastMillis = millis();
     char payload[512];
@@ -160,13 +161,16 @@ void getDeviceStatus(char* payload) {
   const char* led = (led1.getState() == LED_ON)? "ON" : "OFF";
   // 충격 센서 실행 여부
   const char* shockRun = (shock1.getRunState() == SHOCK_RUN)? "RUN" : "STOP";
-  
+
+  // 충격 센서 값 읽기 (충격이 발생하면 1, 아니면 0)
   shockVal = digitalRead(SHOCK_PIN);
   Serial.println(shockVal);
-
+  
   // 앱에서 충격 감지 센서를 실행시킬 때만 충격을 감지
   if(shockRun == "RUN"){
-    // 충격 감지 시
+    // 충격 감지가 실행 중이면 노란 LED 실행
+    led2.runOn();
+    // 충격 감지 시 (빨간 LED 켜지고 충격 ON)
     if(shockVal == HIGH){
       led1.on();
       shock1.on();
@@ -174,21 +178,24 @@ void getDeviceStatus(char* payload) {
       shock1.off();
       led1.off();
     }
+  }else {
+    led2.runOff();
   }
 
+  // 조도 센서 값 읽기
   openReading = analogRead(OPEN_PIN);
-
-  //int openVal = map(openReading, 0, 1024, 0, 255);   // 읽어온 데이터를 0~255범위로 변경하여 줍니다.
   Serial.println(openReading);
+  
   // 금고를 열 때
-  if(openReading < 500) {
+  if(openReading < 900) {
     open1.openSafe();
   } else {
     open1.closeSafe();
   }
+  // 금고 오픈 시 ON
   const char* openSafe = (open1.getState() == OPEN)? "OPEN" : "CLOSE";
 
-  // 충격 감지시 ON
+  // 충격 감지 시 ON
   const char* shock = (shock1.getState() == SHOCK_ON)? "ON" : "OFF";
   
   // make payload for the device update topic ($aws/things/SmartSAFE/shadow/update)
@@ -233,13 +240,9 @@ void onMessageReceived(int messageSize) {
   //    "version":391,
   //    "timestamp":1572784097,
   //    "state":{
-  //        "LED":"ON"
   //        "SHOCK_RUN:"RUN"
   //    },
   //    "metadata":{
-  //        "LED":{
-  //          "timestamp":15727840
-  //         },
   //        "SHOCK_RUN":{
   //          "timestamp":15727840
   //         }
@@ -251,18 +254,13 @@ void onMessageReceived(int messageSize) {
   deserializeJson(doc, buffer);
   JsonObject root = doc.as<JsonObject>();
   JsonObject state = root["state"];
-  //const char* led = state["LED"];
   const char* shockRun = state["SHOCK_RUN"];
-  //const char* shock = state["SHOCK"];
-  //const char* openSafe = state["SAFE"];
-  //Serial.println(led);
-  Serial.println(shockRun);
-  //Serial.println(shock);
-  //Serial.println(openSafe);
-   
-  char payload[512];
- 
 
+  Serial.println(shockRun);
+
+  char payload[512];
+
+  // AWS로부터 메시지를 받을 때 shockRun이 RUN이면 충격 감지 실행, STOP이면 충격 감지 중지
    if (strcmp(shockRun,"RUN")==0) {
     shock1.runShock();
     sprintf(payload,"{\"state\":{\"reported\":{\"SHOCK_RUN\":\"%s\"}}}","RUN");
@@ -273,29 +271,4 @@ void onMessageReceived(int messageSize) {
     sprintf(payload,"{\"state\":{\"reported\":{\"SHOCK_RUN\":\"%s\"}}}","STOP");
     sendMessage(payload);
   }
-  /*
-
-  // 충격 센서 테스트
-  if (strcmp(shock,"ON")==0) {
-    shock1.on();
-    sprintf(payload,"{\"state\":{\"reported\":{\"SHOCK\":\"%s\"}}}","ON");
-    sendMessage(payload);
-    
-  } else if (strcmp(shock,"OFF")==0) {
-    shock1.off();
-    sprintf(payload,"{\"state\":{\"reported\":{\"SHOCK\":\"%s\"}}}","OFF");
-    sendMessage(payload);
-  }
-  */
-     /*
-  if (strcmp(openSafe,"OPEN")==0) {
-    led1.on();
-    sprintf(payload,"{\"state\":{\"reported\":{\"LED\":\"%s\"}}}","ON");
-    sendMessage(payload);
-    
-  } else if (strcmp(openSafe,"CLOSE")==0) {
-    led1.off();
-    sprintf(payload,"{\"state\":{\"reported\":{\"LED\":\"%s\"}}}","OFF");
-    sendMessage(payload);
-  }*/
 }
